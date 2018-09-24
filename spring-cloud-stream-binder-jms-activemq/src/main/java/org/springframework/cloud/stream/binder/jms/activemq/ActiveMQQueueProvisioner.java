@@ -20,12 +20,12 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
 import javax.jms.JMSException;
 import javax.jms.Queue;
 import javax.jms.Session;
 import javax.jms.Topic;
 
-import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.commons.lang.ArrayUtils;
 
 import org.springframework.cloud.stream.binder.ExtendedConsumerProperties;
@@ -52,11 +52,11 @@ import org.springframework.jms.support.JmsUtils;
 public class ActiveMQQueueProvisioner implements
 		ProvisioningProvider<ExtendedConsumerProperties<JmsConsumerProperties>, ExtendedProducerProperties<JmsProducerProperties>> {
 
-	private final ActiveMQConnectionFactory connectionFactory;
+	private final ConnectionFactory connectionFactory;
 
 	private final DestinationNameResolver destinationNameResolver;
 
-	public ActiveMQQueueProvisioner(ActiveMQConnectionFactory connectionFactory,
+	public ActiveMQQueueProvisioner(ConnectionFactory connectionFactory,
 									DestinationNameResolver destinationNameResolver) {
 		this.connectionFactory = connectionFactory;
 		this.destinationNameResolver = destinationNameResolver;

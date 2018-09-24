@@ -5,7 +5,7 @@
  *  you may not use this file except in compliance with the License.
  *  You may obtain a copy of the License at
  *
- *        http://www.apache.org/licenses/LICENSE-2.0
+ *		http://www.apache.org/licenses/LICENSE-2.0
  *
  *  Unless required by applicable law or agreed to in writing, software
  *  distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,29 +14,25 @@
  *  limitations under the License.
  */
 
-package org.springframework.cloud.stream.binder.jms.config;
+package org.springframework.cloud.stream.binder.jms.activemq.config;
 
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.jms.JmsAutoConfiguration;
-import org.springframework.cloud.stream.binder.Binder;
+import org.springframework.boot.autoconfigure.jms.JndiConnectionFactoryAutoConfiguration;
+import org.springframework.cloud.stream.binder.jms.config.JmsBinderAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
 /**
- * Auto-configuration class to enable the JMS binder.
+ * Auto-configuration class to enable the ActiveMQ JMS binder.
  *
- * @author Jack Galilee
- * @author Jonathan Sharpe
- * @author Joseph Taylor
- * @author José Carlos Valero
  * @author Tim Ysewyn
- * @since 1.1
+ * @since 2.0
  */
 @Configuration
-@ConditionalOnMissingBean(Binder.class)
-@Import({JmsBinderGlobalConfiguration.class})
-@AutoConfigureBefore({JmsAutoConfiguration.class})
-public class JmsBinderAutoConfiguration {
+@AutoConfigureAfter({JndiConnectionFactoryAutoConfiguration.class})
+@AutoConfigureBefore({JmsBinderAutoConfiguration.class})
+@Import(ActiveMQJmsConfiguration.class)
+public class ActiveMQJmsBinderAutoConfiguration {
 
 }

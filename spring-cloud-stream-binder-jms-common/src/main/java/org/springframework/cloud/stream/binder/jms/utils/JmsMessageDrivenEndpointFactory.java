@@ -28,12 +28,12 @@ import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ExtendedConsumerProperties;
 import org.springframework.cloud.stream.binder.jms.config.JmsConsumerProperties;
+import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
-import org.springframework.integration.dsl.jms.JmsMessageDrivenChannelAdapter;
 import org.springframework.integration.jms.ChannelPublishingJmsMessageListener;
-import org.springframework.retry.RecoveryCallback;
-import org.springframework.retry.RetryCallback;
+import org.springframework.integration.jms.JmsHeaderMapper;
+import org.springframework.integration.jms.JmsMessageDrivenEndpoint;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
@@ -45,22 +45,28 @@ import org.springframework.retry.support.RetryTemplate;
  * @author José Carlos Valero
  * @author Gary Russell
  * @author Ilayaperumal Gopinathan
+ * @author Tim Ysewyn
  * @since 1.1
  */
-public class JmsMessageDrivenChannelAdapterFactory implements ApplicationContextAware, BeanFactoryAware {
+public class JmsMessageDrivenEndpointFactory implements ApplicationContextAware, BeanFactoryAware {
 
 	private final ListenerContainerFactory listenerContainerFactory;
 
 	private final MessageRecoverer messageRecoverer;
 
+	private final JmsHeaderMapper jmsHeaderMapper;
+
+	private final CompositeMessageConverterFactory compositeMessageConverterFactory = new CompositeMessageConverterFactory();
+
 	private BeanFactory beanFactory;
 
 	private ApplicationContext applicationContext;
 
-	public JmsMessageDrivenChannelAdapterFactory(ListenerContainerFactory listenerContainerFactory,
-			MessageRecoverer messageRecoverer) {
+	public JmsMessageDrivenEndpointFactory(ListenerContainerFactory listenerContainerFactory,
+										   MessageRecoverer messageRecoverer, JmsHeaderMapper jmsHeaderMapper) {
 		this.listenerContainerFactory = listenerContainerFactory;
 		this.messageRecoverer = messageRecoverer;
+		this.jmsHeaderMapper = jmsHeaderMapper;
 	}
 
 	@Override
@@ -73,16 +79,17 @@ public class JmsMessageDrivenChannelAdapterFactory implements ApplicationContext
 		this.applicationContext = applicationContext;
 	}
 
-	public JmsMessageDrivenChannelAdapter build(Queue destination,
-			final ExtendedConsumerProperties<JmsConsumerProperties> properties) {
+	public JmsMessageDrivenEndpoint build(Queue destination,
+										  final ExtendedConsumerProperties<JmsConsumerProperties> properties) {
 		RetryingChannelPublishingJmsMessageListener listener = new RetryingChannelPublishingJmsMessageListener(
-				properties, messageRecoverer, properties.getExtension().getDlqName());
+				properties, this.messageRecoverer, properties.getExtension().getDlqName());
+		listener.setHeaderMapper(this.jmsHeaderMapper);
 		listener.setBeanFactory(this.beanFactory);
-		JmsMessageDrivenChannelAdapter adapter = new JmsMessageDrivenChannelAdapter(
-				listenerContainerFactory.build(destination), listener);
-		adapter.setApplicationContext(this.applicationContext);
-		adapter.setBeanFactory(this.beanFactory);
-		return adapter;
+		JmsMessageDrivenEndpoint endpoint = new JmsMessageDrivenEndpoint(
+				this.listenerContainerFactory.build(destination), listener);
+		endpoint.setApplicationContext(this.applicationContext);
+		endpoint.setBeanFactory(this.beanFactory);
+		return endpoint;
 	}
 
 	private static class RetryingChannelPublishingJmsMessageListener extends ChannelPublishingJmsMessageListener {
@@ -104,42 +111,31 @@ public class JmsMessageDrivenChannelAdapterFactory implements ApplicationContext
 		@Override
 		public void onMessage(final Message jmsMessage, final Session session) throws JMSException {
 			getRetryTemplate(properties).execute(
-					new RetryCallback<Object, JMSException>() {
-
-						@Override
-						public Object doWithRetry(RetryContext retryContext) throws JMSException {
-							try {
-								retryContext.setAttribute(RETRY_CONTEXT_MESSAGE_ATTRIBUTE, jmsMessage);
-								RetryingChannelPublishingJmsMessageListener.super.onMessage(jmsMessage, session);
-							}
-							catch (JMSException e) {
-								logger.error("Failed to send message",
-										e);
-								resetMessageIfRequired(jmsMessage);
-								throw new RuntimeException(e);
-							}
-							catch (Exception e) {
-								resetMessageIfRequired(jmsMessage);
-								throw e;
-							}
-							return null;
+					(RetryContext retryContext) -> {
+						try {
+							retryContext.setAttribute(RETRY_CONTEXT_MESSAGE_ATTRIBUTE, jmsMessage);
+							RetryingChannelPublishingJmsMessageListener.super.onMessage(jmsMessage, session);
 						}
-
+						catch (JMSException e) {
+							logger.error("Failed to send message", e);
+							resetMessageIfRequired(jmsMessage);
+							throw new RuntimeException(e);
+						}
+						catch (Exception e) {
+							resetMessageIfRequired(jmsMessage);
+							throw e;
+						}
+						return null;
 					},
-					new RecoveryCallback<Object>() {
-
-						@Override
-						public Object recover(RetryContext retryContext) throws Exception {
-							if (messageRecoverer != null) {
-								Message message = (Message) retryContext.getAttribute(RETRY_CONTEXT_MESSAGE_ATTRIBUTE);
-								messageRecoverer.recover(message, deadLetterQueueName, retryContext.getLastThrowable());
-							}
-							else {
-								logger.warn("No message recoverer was configured. Messages will be discarded.");
-							}
-							return null;
+					(RetryContext retryContext) -> {
+						if (messageRecoverer != null) {
+							Message message = (Message) retryContext.getAttribute(RETRY_CONTEXT_MESSAGE_ATTRIBUTE);
+							messageRecoverer.recover(message, deadLetterQueueName, retryContext.getLastThrowable());
 						}
-
+						else {
+							logger.warn("No message recoverer was configured. Messages will be discarded.");
+						}
+						return null;
 					}
 			);
 		}
